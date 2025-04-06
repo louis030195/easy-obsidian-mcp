@@ -5,7 +5,7 @@ https://github.com/user-attachments/assets/99b16c89-24bf-4991-af65-68d21554b438
 A simple MCP server to interact with Obsidian via its Local REST API plugin.
 and can be installed in one line, even for non technical users.
 
-[Support the work](https://store.louis030195.com/l/easy-obsidian-mcp?layout=profile).
+[Support the work 🙏](https://store.louis030195.com/l/easy-obsidian-mcp?layout=profile).
 
 ## Features
 
