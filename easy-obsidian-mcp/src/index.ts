@@ -102,7 +102,21 @@ async function main() {
 
   server.tool(
     "obsidian_dataview_search",
-    "search for notes using dataview query language (dql). use this for complex queries involving metadata, tags, folders, etc.",
+    `execute a dataview query language (dql) query. 
+dql is a powerful, sql-like language for querying obsidian notes based on metadata (frontmatter, inline fields), tags, folders, links, file properties (name, path, dates), and tasks. use it to filter, sort, group, and transform data from your obsidian vault.
+
+**key difference from sql:** dql executes queries sequentially, line by line, passing results between commands. this allows multiple 'where', 'sort', or 'group by' steps, unlike declarative sql.
+
+**examples:**
+- get the metadata, links, etc. of my note "MYNOTE":
+  \`\`\`
+  table file from "MYNOTE"
+  \`\`\`
+
+
+this tool is useful in pair with the "obsidian_simple_search" tool and is especially good at getting links between notes.
+
+see dataview documentation for full syntax: https://blacksmithgu.github.io/obsidian-dataview/`,
     dataviewSearchSchema.shape,
     async (args: ToolArgs<typeof dataviewSearchSchema>) => {
       const results = await obsidian.searchDataview(args.query);
