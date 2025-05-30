@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "@types/yargs": "^17.0.33",
-    "yargs": "^17.7.2"
-  }
-}
