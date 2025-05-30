@@ -1,6 +1,6 @@
 {
     "name": "create-easy-obsidian-mcp",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Creates a new easy-obsidian-mcp server instance",
     "bin": {
         "create-easy-obsidian-mcp": "./dist/index.js"

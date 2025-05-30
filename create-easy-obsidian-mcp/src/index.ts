@@ -47,7 +47,7 @@ async function main() {
   fs.ensureDirSync(targetPath);
 
   // --- Copy Template Files ---
-  const templateDir = path.join(__dirname, "..", "..", "easy-obsidian-mcp"); // Adjust based on actual build structure
+  const templateDir = path.join(__dirname, "..", "template"); // Adjusted path
   const copySpinner = p.spinner();
   copySpinner.start(`copying template files to "${projectName}"...`);
 
