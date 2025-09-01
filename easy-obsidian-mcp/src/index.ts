@@ -5,6 +5,7 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
 import { Obsidian } from "./obsidian";
+import path from "path";
 
 // --- Argument Parsing ---
 async function parseArgs() {
@@ -619,20 +620,100 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
           contentLength: content.length,
         });
 
-        const response = {
-          success: true,
-          request_id: queryId,
-          filepath: validatedArgs.filepath,
-          content_length: content.length,
-          retrieval_duration_ms: parseFloat(duration.toFixed(2)),
-          content: content, // The actual file content
-          meta: {
-            timestamp: new Date().toISOString(),
-            operation_type: "get_file_content",
-          },
+        // --- Parse image references in markdown content ---
+        const noteDir = path.posix.dirname(validatedArgs.filepath);
+
+        const markdownImageRegex = /!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g; // ![alt](path "title")
+        const wikilinkImageRegex = /!\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g; // ![[path|size]]
+        const htmlImgRegex = /<img\s+[^>]*src=["']([^"']+)["'][^>]*>/gi; // <img src="path">
+
+        const extractImageTargets = (markdown: string): string[] => {
+          const targets: string[] = [];
+          const add = (u: string) => {
+            if (u && !targets.includes(u)) targets.push(u);
+          };
+          let m: RegExpExecArray | null;
+          while ((m = markdownImageRegex.exec(markdown)) !== null) add(m[1]);
+          while ((m = wikilinkImageRegex.exec(markdown)) !== null) add(m[1]);
+          while ((m = htmlImgRegex.exec(markdown)) !== null) add(m[1]);
+          return targets;
         };
+
+        const isHttpUrl = (u: string) => /^https?:\/\//i.test(u);
+        const isDataUri = (u: string) => /^data:/i.test(u);
+        const parseDataUri = (u: string): { mimeType: string; base64Data: string } | null => {
+          const match = /^data:([^;]+);base64,(.*)$/i.exec(u);
+          if (!match) return null;
+          return { mimeType: match[1], base64Data: match[2] };
+        };
+
+        const normalizeVaultPath = (p: string): string => {
+          const norm = path.posix.normalize(p).replace(/^\/+/, "");
+          return norm;
+        };
+
+        const candidatePathsFor = (noteDirectory: string, ref: string): string[] => {
+          const cleanRef = ref.replace(/^\.\//, "");
+          const candidates: string[] = [];
+          if (cleanRef.startsWith("/")) {
+            candidates.push(normalizeVaultPath(cleanRef));
+          } else {
+            candidates.push(normalizeVaultPath(path.posix.join(noteDirectory, cleanRef)));
+            candidates.push(normalizeVaultPath(cleanRef));
+          }
+          return Array.from(new Set(candidates));
+        };
+
+        const refs = extractImageTargets(content);
+
+        // Fetch images for local refs; external http(s) refs are attached as URI
+        const imageContents: any[] = [];
+        const attachedMeta: Array<{ ref: string; resolved?: string; source: "data" | "uri" | "vault" | "skipped"; reason?: string; mimeType?: string }> = [];
+
+        for (const ref of refs) {
+          try {
+            if (isDataUri(ref)) {
+              const parsed = parseDataUri(ref);
+              if (parsed) {
+                imageContents.push({ type: "image", data: parsed.base64Data, mimeType: parsed.mimeType });
+                attachedMeta.push({ ref, source: "data", mimeType: parsed.mimeType });
+              } else {
+                attachedMeta.push({ ref, source: "skipped", reason: "unsupported data uri" });
+              }
+              continue;
+            }
+            if (isHttpUrl(ref)) {
+              imageContents.push({ type: "image", uri: ref });
+              attachedMeta.push({ ref, source: "uri" });
+              continue;
+            }
+
+            const candidates = candidatePathsFor(noteDir, ref);
+            let fetched = false;
+            for (const c of candidates) {
+              try {
+                const bin = await obsidian.getFileBinary(c);
+                imageContents.push({ type: "image", data: bin.base64Data, mimeType: bin.mimeType });
+                attachedMeta.push({ ref, resolved: c, source: "vault", mimeType: bin.mimeType });
+                fetched = true;
+                break;
+              } catch (e) {
+                // try next candidate
+              }
+            }
+            if (!fetched) {
+              attachedMeta.push({ ref, source: "skipped", reason: "not found in vault" });
+            }
+          } catch (e) {
+            attachedMeta.push({ ref, source: "skipped", reason: e instanceof Error ? e.message : String(e) });
+          }
+        }
+
         return {
-          content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+          content: [
+            { type: "text", text: content },
+            ...imageContents,
+          ],
         };
       } catch (error) {
         const endTime = performance.now();
