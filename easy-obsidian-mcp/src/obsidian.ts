@@ -673,6 +673,89 @@ export class Obsidian {
     return content;
   }
 
+  async getFileBinary(
+    filepath: string
+  ): Promise<{ mimeType: string; base64Data: string }> {
+    const validation = GetFileContentInputSchema.safeParse({ filepath });
+    if (!validation.success) {
+      throw new Error(
+        `invalid getFileBinary parameters: ${validation.error.message}`
+      );
+    }
+    const sanitizedFilepath = validation.data.filepath.trim();
+
+    logObsidianEvent("info", `getting binary content for file`, {
+      filepath: sanitizedFilepath,
+    });
+
+    const url = `${this.getBaseUrl()}/vault/${encodeURIComponent(
+      sanitizedFilepath
+    )}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "GET",
+        headers: this.getHeaders(),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timeoutId);
+      this.circuitBreaker.recordFailure();
+      throw new Error(
+        `failed to fetch binary file ${sanitizedFilepath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      this.circuitBreaker.recordFailure();
+      const errorBody = await response.text().catch(() => "");
+      throw new Error(
+        `obsidian api error ${response.status} for ${sanitizedFilepath}: ${
+          response.statusText
+        }. response: ${errorBody.substring(0, 300)}`
+      );
+    }
+
+    this.circuitBreaker.recordSuccess();
+
+    const contentType =
+      response.headers.get("content-type") || "application/octet-stream";
+
+    try {
+      // Prefer arrayBuffer, but handle text/svg as UTF-8 for consistency
+      let base64Data: string;
+      if (contentType.includes("svg") || contentType.startsWith("text/")) {
+        const textData = await response.text();
+        base64Data = Buffer.from(textData, "utf-8").toString("base64");
+      } else {
+        const buffer = await response.arrayBuffer();
+        base64Data = Buffer.from(buffer).toString("base64");
+      }
+
+      logObsidianEvent("info", `fetched binary content`, {
+        filepath: sanitizedFilepath,
+        mimeType: contentType,
+        size: base64Data.length,
+      });
+
+      return { mimeType: contentType, base64Data };
+    } catch (error) {
+      throw new Error(
+        `failed to read binary response for ${sanitizedFilepath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  }
+
   async listFiles(
     directoryPath?: string
   ): Promise<z.infer<typeof FileListSchema>> {
