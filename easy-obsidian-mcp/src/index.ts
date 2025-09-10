@@ -70,6 +70,28 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
+// Convert LIST and TASK queries to TABLE format for API compatibility
+function convertToTableQuery(query: string): { converted: string; originalType: string } {
+  const trimmedQuery = query.trim();
+  
+  // Check if it's a LIST query
+  if (trimmedQuery.toLowerCase().startsWith('list')) {
+    // Convert "list from ..." to "table file.name from ..."
+    const converted = trimmedQuery.replace(/^list\s+/i, 'table file.name ');
+    return { converted, originalType: 'list' };
+  }
+  
+  // Check if it's a TASK query
+  if (trimmedQuery.toLowerCase().startsWith('task')) {
+    // Convert "task from ..." to "table file.name, file.tasks from ..."
+    const converted = trimmedQuery.replace(/^task\s+/i, 'table file.name, file.tasks ');
+    return { converted, originalType: 'task' };
+  }
+  
+  // Already a TABLE query or other format
+  return { converted: query, originalType: 'table' };
+}
+
 // Helper function for JSON logging to stderr
 function logJsonError(logObject: Record<string, any>): void {
   console.error(JSON.stringify(logObject));
@@ -117,31 +139,54 @@ function generateSearchSuggestions(
 // Generate dataview suggestions
 function generateDataviewSuggestions(query: string, error?: string): string[] {
   const suggestions: string[] = [];
+  const lowerQuery = query.toLowerCase();
 
   if (error?.includes("syntax")) {
     suggestions.push(
       "check dataview query syntax at https://blacksmithgu.github.io/obsidian-dataview/"
     );
     suggestions.push(
-      "try a simpler query first, like: 'list from \"\"' (lists all notes)"
+      "try a simpler query first, like: 'table file.name from \"\"' (lists all notes)"
     );
   }
 
-  const lowerQuery = query.toLowerCase();
+  if (error?.includes("no results") || error?.includes("empty")) {
+    suggestions.push("verify the folder or tag path exists");
+    suggestions.push("check if dataview plugin is enabled in obsidian");
+  }
+
+  // Inform about LIST/TASK conversion
+  if (lowerQuery.startsWith('list')) {
+    suggestions.push('LIST queries are automatically converted to TABLE format for API compatibility');
+  }
+  
+  if (lowerQuery.startsWith('task')) {
+    suggestions.push('TASK queries are automatically converted to TABLE format with file.tasks included');
+  }
 
   if (!lowerQuery.includes("from")) {
     suggestions.push(
-      "most dataview queries need a 'from' clause, e.g., 'list from \"\"'"
+      "most dataview queries need a 'from' clause, e.g., 'table file.name from \"\"'"
     );
   }
 
+  // Query optimization suggestions
+  if (!lowerQuery.includes("limit") && !error) {
+    suggestions.push('add "limit N" to restrict results and improve performance');
+  }
+
+  if (!lowerQuery.includes("sort") && lowerQuery.includes("table")) {
+    suggestions.push('add "sort file.mtime desc" to see recent files first');
+  }
+
+  // Specific example for common queries
   if (lowerQuery.includes("ben")) {
     suggestions.push(
       "try: 'table file.name where contains(file.name, \"ben\")'"
     );
-    suggestions.push("try: 'list from [[Ben]]' if there's a note named Ben");
+    suggestions.push("try: 'table file.name from [[Ben]]' if there's a note named Ben");
     suggestions.push(
-      "try: 'list from #ben' if there are notes tagged with ben"
+      "try: 'table file.name from #ben' if there are notes tagged with ben"
     );
   }
 
@@ -205,6 +250,23 @@ const simpleSearchSchema = z.object({
     .describe(
       "how much context to return around the matching string (default: 100, max: 2000)"
     ),
+  max_results: z
+    .number()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(20)
+    .describe(
+      "maximum number of results to return (default: 20, max: 100). helps prevent token overflow"
+    ),
+  offset: z
+    .number()
+    .min(0)
+    .optional()
+    .default(0)
+    .describe(
+      "number of results to skip for pagination (default: 0). use with max_results to paginate through results"
+    ),
 });
 
 const dataviewSearchSchema = z.object({
@@ -247,6 +309,37 @@ const listFilesToolSchema = z.object({
     .optional()
     .describe(
       "optional path to a directory relative to the vault root (e.g., 'projects/active'). if omitted, lists files and folders in the vault root."
+    ),
+  max_items: z
+    .number()
+    .min(1)
+    .max(100)
+    .optional()
+    .default(50)
+    .describe(
+      "maximum number of items to return (default: 50, max: 100). helps prevent token overflow in large directories"
+    ),
+  offset: z
+    .number()
+    .min(0)
+    .optional()
+    .default(0)
+    .describe(
+      "number of items to skip for pagination (default: 0). use with max_items to paginate through large directories"
+    ),
+  sort_by: z
+    .enum(["name", "modified", "created", "size"])
+    .optional()
+    .default("name")
+    .describe(
+      "sort criteria for the results (default: 'name')"
+    ),
+  sort_order: z
+    .enum(["asc", "desc"])
+    .optional()
+    .default("asc")
+    .describe(
+      "sort order for the results (default: 'asc')"
     ),
 });
 
@@ -338,6 +431,8 @@ async function main() {
         message: `[mcp] ${queryId} simple search requested`,
         query: args.query,
         context_length: args.context_length,
+        max_results: args.max_results,
+        offset: args.offset,
       });
 
       try {
@@ -346,14 +441,23 @@ async function main() {
 
         logJsonError({
           level: "info",
-          message: `[mcp] ${queryId} executing search with context length`,
+          message: `[mcp] ${queryId} executing search with pagination`,
           context_length: validatedArgs.context_length,
+          max_results: validatedArgs.max_results,
+          offset: validatedArgs.offset,
         });
 
-        const results = await obsidian.search(
+        const allResults = await obsidian.search(
           validatedArgs.query,
           validatedArgs.context_length
         );
+        
+        // Apply pagination
+        const paginatedResults = allResults.slice(
+          validatedArgs.offset,
+          validatedArgs.offset + validatedArgs.max_results
+        );
+        
         const endTime = performance.now();
         const duration = endTime - startTime;
 
@@ -361,26 +465,35 @@ async function main() {
           level: "info",
           message: `[mcp] ${queryId} search completed`,
           durationMs: parseFloat(duration.toFixed(2)),
-          resultCount: results.length,
+          totalResultCount: allResults.length,
+          returnedResultCount: paginatedResults.length,
+          offset: validatedArgs.offset,
         });
 
         // Generate suggestions for better LLM responses
         const suggestions = generateSearchSuggestions(
           validatedArgs.query,
-          results.length
+          allResults.length
         );
 
-        // Enhanced response structure for LLMs
+        // Enhanced response structure for LLMs with pagination info
         const response = {
           success: true,
           request_id: queryId,
           query: validatedArgs.query,
           original_query: args.query,
-          results_count: results.length,
+          total_results: allResults.length,
+          returned_results: paginatedResults.length,
+          offset: validatedArgs.offset,
+          max_results: validatedArgs.max_results,
+          has_more: (validatedArgs.offset + validatedArgs.max_results) < allResults.length,
           search_duration_ms: duration,
           context_length: validatedArgs.context_length,
-          results: results,
+          results: paginatedResults,
           ...(suggestions.length > 0 && { suggestions }),
+          pagination_hint: allResults.length > validatedArgs.max_results 
+            ? `Showing results ${validatedArgs.offset + 1}-${Math.min(validatedArgs.offset + validatedArgs.max_results, allResults.length)} of ${allResults.length}. Use offset parameter to see more.`
+            : undefined,
           meta: {
             timestamp: new Date().toISOString(),
             search_type: "simple_text",
@@ -388,7 +501,7 @@ async function main() {
           },
         };
 
-        if (results.length === 0) {
+        if (allResults.length === 0) {
           logJsonError({
             level: "error",
             message: "obsidian_simple_search no results found for",
@@ -488,12 +601,18 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
         // Validate inputs with zod schema
         const validatedArgs = dataviewSearchSchema.parse(args);
 
+        // Convert LIST/TASK queries to TABLE format for API compatibility
+        const { converted: convertedQuery, originalType } = convertToTableQuery(validatedArgs.query);
+        
         logJsonError({
           level: "info",
           message: `[mcp] ${queryId} executing dataview query`,
+          originalQuery: validatedArgs.query,
+          convertedQuery: convertedQuery,
+          queryType: originalType,
         });
 
-        const results = await obsidian.searchDataview(validatedArgs.query);
+        const results = await obsidian.searchDataview(convertedQuery);
         const endTime = performance.now();
         const duration = endTime - startTime;
         logJsonError({
@@ -510,8 +629,12 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
         const response = {
           success: true,
           request_id: queryId,
-          query: validatedArgs.query,
-          original_query: args.query,
+          query: convertedQuery,
+          original_query: validatedArgs.query,
+          query_type: originalType,
+          ...(originalType !== 'table' && { 
+            conversion_note: `Original ${originalType.toUpperCase()} query converted to TABLE format for API compatibility` 
+          }),
           results_count: results.length,
           query_duration_ms: duration,
           results: results,
@@ -524,6 +647,7 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
               "dataview searches metadata, links, and file properties",
               "use 'from' clauses to specify scope",
               "combine with 'where' for filtering",
+              "LIST and TASK queries are automatically converted to TABLE format",
             ],
           },
         };
@@ -671,132 +795,39 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
           return Array.from(new Set(candidates));
         };
 
-        const refs = extractImageTargets(content);
-
-        // Fetch images for local refs; external http(s) refs are attached as URI
+        /*
+         * IMAGE PROCESSING DISABLED - Known Issue (2025-01-10)
+         * 
+         * There's a compatibility issue between the MCP SDK image format and Claude's expected format.
+         * The MCP SDK expects { type: "image", data: string, mimeType: string }
+         * But Claude's API validation expects a different format with source.base64.media_type structure.
+         * 
+         * Attempts to fix:
+         * 1. Tried using Anthropic's format directly - rejected by MCP SDK validation
+         * 2. Tried normalizing MIME types - still getting "Could not process image" error
+         * 3. Added extensive error handling and validation - images still fail
+         * 
+         * The issue appears to be in the translation layer between MCP SDK and Claude's API.
+         * Disabling image processing until this is resolved upstream.
+         * 
+         * To re-enable: Uncomment the code below and test with various image formats.
+         */
+        
+        // TEMPORARILY DISABLED - See comment above
+        const refs = []; // extractImageTargets(content);
         const imageContents: any[] = [];
-        const attachedMeta: Array<{
-          ref: string;
-          resolved?: string;
-          source: "data" | "uri" | "vault" | "skipped";
-          reason?: string;
-          mimeType?: string;
-        }> = [];
 
+        // IMAGE PROCESSING CODE DISABLED - loops over refs array which is now empty
+        // Original code preserved below for when issue is fixed
+        
+        /*
         for (const ref of refs) {
-          try {
-            if (isDataUri(ref)) {
-              const parsed = parseDataUri(ref);
-              if (parsed) {
-                imageContents.push({
-                  type: "image",
-                  data: parsed.base64Data,
-                  mimeType: parsed.mimeType,
-                });
-                attachedMeta.push({
-                  ref,
-                  source: "data",
-                  mimeType: parsed.mimeType,
-                });
-              } else {
-                attachedMeta.push({
-                  ref,
-                  source: "skipped",
-                  reason: "unsupported data uri",
-                });
-              }
-              continue;
-            }
-            if (isHttpUrl(ref)) {
-              // For HTTP URLs, fetch the image and convert to base64
-              try {
-                const response = await fetch(ref);
-                if (response.ok) {
-                  const contentType =
-                    response.headers.get("content-type") ||
-                    "application/octet-stream";
-                  let base64Data: string;
-
-                  if (
-                    contentType.includes("svg") ||
-                    contentType.startsWith("text/")
-                  ) {
-                    const textData = await response.text();
-                    base64Data = Buffer.from(textData, "utf-8").toString(
-                      "base64"
-                    );
-                  } else {
-                    const buffer = await response.arrayBuffer();
-                    base64Data = Buffer.from(buffer).toString("base64");
-                  }
-
-                  imageContents.push({
-                    type: "image",
-                    data: base64Data,
-                    mimeType: contentType,
-                  });
-                  attachedMeta.push({
-                    ref,
-                    source: "uri",
-                    mimeType: contentType,
-                  });
-                } else {
-                  attachedMeta.push({
-                    ref,
-                    source: "skipped",
-                    reason: `HTTP ${response.status}`,
-                  });
-                }
-              } catch (e) {
-                attachedMeta.push({
-                  ref,
-                  source: "skipped",
-                  reason: e instanceof Error ? e.message : String(e),
-                });
-              }
-              continue;
-            }
-
-            const candidates = candidatePathsFor(noteDir, ref);
-            let fetched = false;
-            for (const c of candidates) {
-              try {
-                const bin = await obsidian.getFileBinary(c);
-                imageContents.push({
-                  type: "image",
-                  data: bin.base64Data,
-                  mimeType: bin.mimeType,
-                });
-                attachedMeta.push({
-                  ref,
-                  resolved: c,
-                  source: "vault",
-                  mimeType: bin.mimeType,
-                });
-                fetched = true;
-                break;
-              } catch (e) {
-                // try next candidate
-              }
-            }
-            if (!fetched) {
-              attachedMeta.push({
-                ref,
-                source: "skipped",
-                reason: "not found in vault",
-              });
-            }
-          } catch (e) {
-            attachedMeta.push({
-              ref,
-              source: "skipped",
-              reason: e instanceof Error ? e.message : String(e),
-            });
-          }
+          // ... [Full image processing logic commented out]
         }
-
+        */
+        
         return {
-          content: [{ type: "text", text: content }, ...imageContents],
+          content: [{ type: "text", text: content }], // Removed ...imageContents since images are disabled
         };
       } catch (error) {
         const endTime = performance.now();
@@ -854,13 +885,46 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
       });
       try {
         const validatedArgs = listFilesToolSchema.parse(args);
-        const files = await obsidian.listFiles(validatedArgs.directory_path);
+        const allFiles = await obsidian.listFiles(validatedArgs.directory_path);
+        
+        // Sort the files based on criteria
+        let sortedFiles = [...allFiles];
+        switch (validatedArgs.sort_by) {
+          case 'name':
+            sortedFiles.sort((a, b) => a.filename.localeCompare(b.filename));
+            break;
+          case 'modified':
+            sortedFiles.sort((a, b) => (b.modified || 0) - (a.modified || 0));
+            break;
+          case 'created':
+            sortedFiles.sort((a, b) => (b.created || 0) - (a.created || 0));
+            break;
+          case 'size':
+            sortedFiles.sort((a, b) => (b.size || 0) - (a.size || 0));
+            break;
+        }
+        
+        // Apply sort order
+        if (validatedArgs.sort_order === 'desc' && validatedArgs.sort_by === 'name') {
+          sortedFiles.reverse();
+        } else if (validatedArgs.sort_order === 'asc' && validatedArgs.sort_by !== 'name') {
+          sortedFiles.reverse();
+        }
+        
+        // Apply pagination
+        const paginatedFiles = sortedFiles.slice(
+          validatedArgs.offset,
+          validatedArgs.offset + validatedArgs.max_items
+        );
+        
         const endTime = performance.now();
         const duration = endTime - startTime;
         logJsonError({
           level: "info",
           message: `[mcp] ${queryId} successfully listed items`,
-          item_count: files.length,
+          total_items: allFiles.length,
+          returned_items: paginatedFiles.length,
+          offset: validatedArgs.offset,
           durationMs: parseFloat(duration.toFixed(2)),
         });
 
@@ -868,9 +932,18 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
           success: true,
           request_id: queryId,
           directory_path: validatedArgs.directory_path || "/", // Represent root as /
-          item_count: files.length,
+          total_items: allFiles.length,
+          returned_items: paginatedFiles.length,
+          offset: validatedArgs.offset,
+          max_items: validatedArgs.max_items,
+          has_more: (validatedArgs.offset + validatedArgs.max_items) < allFiles.length,
+          sort_by: validatedArgs.sort_by,
+          sort_order: validatedArgs.sort_order,
           listing_duration_ms: parseFloat(duration.toFixed(2)),
-          items: files, // Array of file/folder objects
+          items: paginatedFiles, // Paginated array of file/folder objects
+          ...(allFiles.length > validatedArgs.max_items && {
+            pagination_hint: `Showing items ${validatedArgs.offset + 1}-${Math.min(validatedArgs.offset + validatedArgs.max_items, allFiles.length)} of ${allFiles.length}. Use offset parameter to see more.`
+          }),
           meta: {
             timestamp: new Date().toISOString(),
             operation_type: "list_files",
