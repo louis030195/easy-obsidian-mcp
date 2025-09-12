@@ -6,6 +6,7 @@ import { hideBin } from "yargs/helpers";
 
 import { Obsidian } from "./obsidian";
 import { FilesystemSearch } from "./filesystem-search";
+import { VaultDetector } from "./vault-detector";
 import path from "path";
 import * as os from "os";
 
@@ -238,6 +239,7 @@ you are a helpful assistant that can interact with a user's obsidian vault throu
 - ensure obsidian local rest api plugin is installed and running
 - verify the api key is correct
 - if the api is unavailable, filesystem search will be used as fallback
+- vault location is auto-detected or can be set via --vaultPath argument
 - check that the specified port (${
       process.env.OBSIDIAN_PORT || 27123
     }) is accessible
@@ -358,7 +360,50 @@ const listFilesToolSchema = z.object({
 
 // --- Start Server ---
 async function main() {
-  const { apiKey, port, host, timeout, debug, vaultPath } = await parseArgs();
+  const { apiKey, port, host, timeout, debug, vaultPath: argVaultPath } = await parseArgs();
+  
+  // Initialize vault detector
+  const vaultDetector = new VaultDetector();
+  
+  // Determine vault path with multiple fallbacks
+  let vaultPath = argVaultPath;
+  
+  if (!vaultPath || vaultPath === path.join(os.homedir(), 'Documents', 'Obsidian')) {
+    // Try to get from stored config
+    const storedPath = await vaultDetector.getStoredVaultPath();
+    
+    if (storedPath) {
+      vaultPath = storedPath;
+      logJsonError({
+        level: "info",
+        message: `📁 Using stored vault path: ${vaultPath}`
+      });
+    } else {
+      // Auto-detect vault
+      logJsonError({
+        level: "info",
+        message: "🔍 Auto-detecting Obsidian vault location..."
+      });
+      
+      const detectedPath = await vaultDetector.autoDetectVault();
+      
+      if (detectedPath) {
+        vaultPath = detectedPath;
+        logJsonError({
+          level: "info",
+          message: `✅ Found vault at: ${vaultPath}`
+        });
+        // Store for future use
+        await vaultDetector.storeVaultPath(vaultPath);
+      } else {
+        logJsonError({
+          level: "warn",
+          message: "⚠️ Could not auto-detect vault. Using default location."
+        });
+        vaultPath = argVaultPath;
+      }
+    }
+  }
 
   if (debug) {
     logJsonError({
