@@ -11,8 +11,11 @@ and can be installed in one line, even for non technical users.
 
 Provides tools to interact with your Obsidian vault, allowing you to:
 
-- Search notes
-- Search notes using Dataview query language (DQL)
+- **Simple search** - Search notes content across your vault
+- **Dataview search** - Search notes using Dataview query language (DQL) for advanced queries
+- **Fuzzy search** - Find notes with approximate matching when you're not sure of exact spelling
+- **Graph search** - Analyze links and connections between notes, find orphaned notes
+- **Filesystem fallback** - New search tools work even when Obsidian REST API is unavailable
 
 ## Installation & Setup
 
@@ -37,13 +40,23 @@ npx create-easy-obsidian-mcp
 
 Follow the instructions to setup the server.
 
+#### Optional: Vault Path Configuration
+
+If the Obsidian REST API is unavailable, the server can fall back to filesystem-based search. By default, it looks for your vault in `~/Documents/Obsidian`. You can customize this by:
+
+1. Setting the `OBSIDIAN_VAULT_PATH` environment variable
+2. Using the `--vaultPath` command line argument
+
 ### Example Prompts
 
 Try prompts like:
 
 - "list the files in my obsidian vault"
 - "search my obsidian notes for 'artificial intelligence'"
-- find my last 5 notes
+- "find my last 5 notes"
+- "fuzzy search for 'artfcial inteligence'" (works with typos!)
+- "show me the link graph starting from my index note"
+- "find all orphaned notes with no connections"
 
 ### Debugging
 
