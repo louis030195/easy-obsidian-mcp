@@ -5,10 +5,17 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
 import { Obsidian } from "./obsidian";
+import { FilesystemSearch } from "./filesystem-search";
+import { VaultDetector } from "./vault-detector";
 import path from "path";
+import * as os from "os";
 
 // --- Argument Parsing ---
 async function parseArgs() {
+  // Check for vault path environment variable or default locations
+  const defaultVaultPath = process.env.OBSIDIAN_VAULT_PATH || 
+    path.join(os.homedir(), 'Documents', 'Obsidian');
+  
   try {
     const argv = await yargs(hideBin(process.argv))
       .options({
@@ -37,6 +44,11 @@ async function parseArgs() {
           default: false,
           description: "enable debug logging",
         },
+        vaultPath: {
+          type: "string",
+          default: defaultVaultPath,
+          description: "path to obsidian vault (for filesystem fallback)",
+        },
       })
       .strict() // Ensure only defined options are accepted
       .help()
@@ -49,6 +61,7 @@ async function parseArgs() {
       host: argv.host,
       timeout: argv.timeout,
       debug: argv.debug,
+      vaultPath: argv.vaultPath,
     };
   } catch (error: any) {
     logJsonError({
@@ -225,6 +238,8 @@ you are a helpful assistant that can interact with a user's obsidian vault throu
 **troubleshooting:**
 - ensure obsidian local rest api plugin is installed and running
 - verify the api key is correct
+- if the api is unavailable, filesystem search will be used as fallback
+- vault location is auto-detected or can be set via --vaultPath argument
 - check that the specified port (${
       process.env.OBSIDIAN_PORT || 27123
     }) is accessible
@@ -345,7 +360,50 @@ const listFilesToolSchema = z.object({
 
 // --- Start Server ---
 async function main() {
-  const { apiKey, port, host, timeout, debug } = await parseArgs();
+  const { apiKey, port, host, timeout, debug, vaultPath: argVaultPath } = await parseArgs();
+  
+  // Initialize vault detector
+  const vaultDetector = new VaultDetector();
+  
+  // Determine vault path with multiple fallbacks
+  let vaultPath = argVaultPath;
+  
+  if (!vaultPath || vaultPath === path.join(os.homedir(), 'Documents', 'Obsidian')) {
+    // Try to get from stored config
+    const storedPath = await vaultDetector.getStoredVaultPath();
+    
+    if (storedPath) {
+      vaultPath = storedPath;
+      logJsonError({
+        level: "info",
+        message: `📁 Using stored vault path: ${vaultPath}`
+      });
+    } else {
+      // Auto-detect vault
+      logJsonError({
+        level: "info",
+        message: "🔍 Auto-detecting Obsidian vault location..."
+      });
+      
+      const detectedPath = await vaultDetector.autoDetectVault();
+      
+      if (detectedPath) {
+        vaultPath = detectedPath;
+        logJsonError({
+          level: "info",
+          message: `✅ Found vault at: ${vaultPath}`
+        });
+        // Store for future use
+        await vaultDetector.storeVaultPath(vaultPath);
+      } else {
+        logJsonError({
+          level: "warn",
+          message: "⚠️ Could not auto-detect vault. Using default location."
+        });
+        vaultPath = argVaultPath;
+      }
+    }
+  }
 
   if (debug) {
     logJsonError({
@@ -370,6 +428,10 @@ async function main() {
     retryDelayMs: 1000,
   });
 
+  // Initialize filesystem search as fallback
+  const filesystemSearch = new FilesystemSearch(vaultPath);
+  let apiAvailable = false;
+
   logJsonError({
     level: "info",
     message: "starting easy-obsidian-mcp server...",
@@ -382,6 +444,7 @@ async function main() {
       message: "performing initial health check...",
     });
     const isHealthy = await obsidian.healthCheck();
+    apiAvailable = isHealthy;
     if (!isHealthy) {
       logJsonError({
         level: "warn",
@@ -397,6 +460,11 @@ async function main() {
         message: `   check connection to ${host}:${port}`,
         host,
         port,
+      });
+      logJsonError({
+        level: "info",
+        message: "📁 filesystem fallback will be used for search operations",
+        vaultPath,
       });
     } else {
       logJsonError({
@@ -447,10 +515,50 @@ async function main() {
           offset: validatedArgs.offset,
         });
 
-        const allResults = await obsidian.search(
-          validatedArgs.query,
-          validatedArgs.context_length
-        );
+        // Try API first, fall back to filesystem if unavailable
+        let allResults: any[] = [];
+        let searchMethod = 'api';
+        
+        if (apiAvailable) {
+          try {
+            allResults = await obsidian.search(
+              validatedArgs.query,
+              validatedArgs.context_length
+            );
+          } catch (apiError) {
+            logJsonError({
+              level: "warn",
+              message: "API search failed, falling back to filesystem search",
+              error: formatError(apiError)
+            });
+            apiAvailable = false;
+          }
+        }
+        
+        // Fallback to filesystem search
+        if (!apiAvailable || allResults.length === 0) {
+          searchMethod = 'filesystem';
+          const fsResults = await filesystemSearch.search({
+            vaultPath,
+            query: validatedArgs.query,
+            maxResults: 100, // Get more for pagination
+            contextLines: Math.floor(validatedArgs.context_length / 50),
+            searchType: 'content'
+          });
+          
+          // Convert filesystem results to API format
+          allResults = fsResults.map(r => ({
+            filename: r.path,
+            score: r.matches.length,
+            matches: r.matches.map(m => ({
+              context: m.context || m.content,
+              match: {
+                start: 0,
+                end: m.content.length
+              }
+            }))
+          }));
+        }
         
         // Apply pagination
         const paginatedResults = allResults.slice(
@@ -497,7 +605,10 @@ async function main() {
           meta: {
             timestamp: new Date().toISOString(),
             search_type: "simple_text",
-            vault_info: "content search across all files",
+            search_method: searchMethod,
+            vault_info: searchMethod === 'filesystem' 
+              ? "filesystem search (API unavailable)" 
+              : "content search across all files",
           },
         };
 
@@ -1011,6 +1122,179 @@ see dataview documentation for full syntax: https://blacksmithgu.github.io/obsid
     });
     process.exit(1);
   }
+
+  // Add new filesystem-based tools
+  server.tool(
+    "obsidian_fuzzy_search",
+    "fuzzy search for notes using approximate matching. works even when obsidian api is unavailable. great for finding notes when you're not sure of exact spelling or phrasing.",
+    z.object({
+      query: z.string().min(1).max(500).describe("search query for fuzzy matching"),
+      max_results: z.number().min(1).max(50).optional().default(10)
+        .describe("maximum number of results to return (default: 10)")
+    }).shape,
+    async (args) => {
+      const startTime = performance.now();
+      const queryId = `fuzzy-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      
+      logJsonError({
+        level: "info",
+        message: `[mcp] ${queryId} fuzzy search requested`,
+        query: args.query,
+        max_results: args.max_results
+      });
+
+      try {
+        const results = await filesystemSearch.fuzzySearch(
+          args.query,
+          args.max_results
+        );
+
+        const endTime = performance.now();
+        const duration = endTime - startTime;
+
+        const response = {
+          success: true,
+          request_id: queryId,
+          query: args.query,
+          total_results: results.length,
+          search_duration_ms: duration,
+          results: results.map(r => ({
+            filename: r.filename,
+            path: r.path,
+            matches: r.matches,
+            frontmatter: r.frontmatter
+          })),
+          meta: {
+            timestamp: new Date().toISOString(),
+            search_type: "fuzzy",
+            search_method: "filesystem"
+          }
+        };
+
+        logJsonError({
+          level: "info",
+          message: `[mcp] ${queryId} fuzzy search completed`,
+          resultCount: results.length,
+          durationMs: parseFloat(duration.toFixed(2))
+        });
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(response, null, 2) }]
+        };
+      } catch (error) {
+        const endTime = performance.now();
+        const duration = endTime - startTime;
+        
+        logJsonError({
+          level: "error",
+          message: `[mcp] ${queryId} fuzzy search failed`,
+          error: formatError(error)
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              request_id: queryId,
+              error: "fuzzy_search_failed",
+              message: formatError(error),
+              duration_ms: duration
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "obsidian_graph_search",
+    "analyze links and connections between notes. finds orphaned notes, builds link graphs, and discovers note relationships. works without obsidian api.",
+    z.object({
+      start_file: z.string().optional()
+        .describe("optional starting file to analyze connections from"),
+      max_depth: z.number().min(1).max(5).optional().default(2)
+        .describe("maximum depth for connection traversal (default: 2)"),
+      include_orphans: z.boolean().optional().default(false)
+        .describe("include notes with no links (default: false)")
+    }).shape,
+    async (args) => {
+      const startTime = performance.now();
+      const queryId = `graph-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      
+      logJsonError({
+        level: "info",
+        message: `[mcp] ${queryId} graph search requested`,
+        start_file: args.start_file,
+        max_depth: args.max_depth,
+        include_orphans: args.include_orphans
+      });
+
+      try {
+        const results = await filesystemSearch.graphSearch({
+          vaultPath,
+          startFile: args.start_file,
+          maxDepth: args.max_depth,
+          includeOrphans: args.include_orphans
+        });
+
+        const endTime = performance.now();
+        const duration = endTime - startTime;
+
+        const response = {
+          success: true,
+          request_id: queryId,
+          total_notes: results.length,
+          search_duration_ms: duration,
+          orphaned_notes: results.filter(r => 
+            r.outgoingLinks.length === 0 && 
+            (!r.incomingLinks || r.incomingLinks.length === 0)
+          ).length,
+          results: results,
+          meta: {
+            timestamp: new Date().toISOString(),
+            search_type: "graph_analysis",
+            search_method: "filesystem"
+          }
+        };
+
+        logJsonError({
+          level: "info",
+          message: `[mcp] ${queryId} graph search completed`,
+          resultCount: results.length,
+          durationMs: parseFloat(duration.toFixed(2))
+        });
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(response, null, 2) }]
+        };
+      } catch (error) {
+        const endTime = performance.now();
+        const duration = endTime - startTime;
+        
+        logJsonError({
+          level: "error",
+          message: `[mcp] ${queryId} graph search failed`,
+          error: formatError(error)
+        });
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              request_id: queryId,
+              error: "graph_search_failed",
+              message: formatError(error),
+              duration_ms: duration
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  );
 }
 
 // Graceful shutdown
