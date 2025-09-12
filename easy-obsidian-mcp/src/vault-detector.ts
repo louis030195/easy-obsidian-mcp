@@ -13,6 +13,7 @@ export class VaultDetector {
   
   constructor() {
     const home = os.homedir();
+    const platform = os.platform();
     
     // Common locations where Obsidian vaults might be
     this.commonVaultPaths = [
@@ -26,6 +27,16 @@ export class VaultDetector {
       path.join(home, 'iCloud Drive', 'Documents'),
       path.join(home, 'Google Drive'),
     ];
+    
+    // Add Windows-specific paths
+    if (platform === 'win32') {
+      this.commonVaultPaths.push(
+        path.join(home, 'OneDrive', 'Desktop'),
+        path.join(home, 'My Documents'),
+        path.join('C:', 'Obsidian'),
+        path.join('D:', 'Obsidian')
+      );
+    }
     
     // Add environment variable if set
     if (process.env.OBSIDIAN_VAULT_PATH) {

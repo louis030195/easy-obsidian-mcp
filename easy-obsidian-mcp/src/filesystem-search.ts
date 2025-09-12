@@ -440,10 +440,11 @@ export class FilesystemSearch {
         // Build backlinks
         for (const link of links) {
           // Find the file that matches this link
+          // Use path.sep for cross-platform compatibility
           const linkedFile = files.find(f => 
             path.basename(f, '.md') === link || 
             f === link + '.md' ||
-            f.endsWith('/' + link + '.md')
+            f.endsWith(path.sep + link + '.md')
           );
           
           if (linkedFile) {
