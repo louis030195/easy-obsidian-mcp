@@ -1,6 +1,6 @@
 {
     "name": "@louis030195/mcp-obsidian",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "MCP server for Obsidian - AI-powered vault search and interaction",
     "main": "dist/index.js",
     "bin": {

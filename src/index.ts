@@ -21,8 +21,9 @@ async function parseArgs() {
       .options({
         apiKey: {
           type: "string",
-          demandOption: true,
-          description: "obsidian local rest api key",
+          demandOption: false,
+          default: "fallback-no-api",
+          description: "obsidian local rest api key (optional, will use filesystem-only mode if not provided)",
         },
         port: {
           type: "number",
@@ -437,51 +438,63 @@ async function main() {
     message: "starting easy-obsidian-mcp server...",
   });
 
-  // Perform health check
-  try {
-    logJsonError({
-      level: "info",
-      message: "performing initial health check...",
-    });
-    const isHealthy = await obsidian.healthCheck();
-    apiAvailable = isHealthy;
-    if (!isHealthy) {
-      logJsonError({
-        level: "warn",
-        message: "⚠️  health check failed - obsidian api may not be accessible",
-      });
-      logJsonError({
-        level: "warn",
-        message:
-          "   ensure obsidian local rest api plugin is installed and running",
-      });
-      logJsonError({
-        level: "warn",
-        message: `   check connection to ${host}:${port}`,
-        host,
-        port,
-      });
+  // Perform health check only if API key is provided
+  if (apiKey !== 'fallback-no-api') {
+    try {
       logJsonError({
         level: "info",
-        message: "📁 filesystem fallback will be used for search operations",
-        vaultPath,
+        message: "performing initial health check...",
       });
-    } else {
+      const isHealthy = await obsidian.healthCheck();
+      apiAvailable = isHealthy;
+      if (!isHealthy) {
+        logJsonError({
+          level: "warn",
+          message: "⚠️  health check failed - obsidian api may not be accessible",
+        });
+        logJsonError({
+          level: "warn",
+          message:
+            "   ensure obsidian local rest api plugin is installed and running",
+        });
+        logJsonError({
+          level: "warn",
+          message: `   check connection to ${host}:${port}`,
+          host,
+          port,
+        });
+        logJsonError({
+          level: "info",
+          message: "📁 filesystem fallback will be used for search operations",
+          vaultPath,
+        });
+      } else {
+        logJsonError({
+          level: "info",
+          message: "✅ obsidian api connection verified",
+        });
+      }
+    } catch (error) {
       logJsonError({
-        level: "info",
-        message: "✅ obsidian api connection verified",
+        level: "error",
+        message: "❌ initial health check failed:",
+        error: formatError(error),
+      });
+      logJsonError({
+        level: "error",
+        message: "   continuing anyway - api might become available later",
       });
     }
-  } catch (error) {
+  } else {
     logJsonError({
-      level: "error",
-      message: "❌ initial health check failed:",
-      error: formatError(error),
+      level: "info",
+      message: "🔧 Running in filesystem-only mode (no API key provided)",
     });
     logJsonError({
-      level: "error",
-      message: "   continuing anyway - api might become available later",
+      level: "info",
+      message: `📁 Using vault at: ${vaultPath}`,
     });
+    apiAvailable = false;
   }
 
   // --- Tool Definitions ---
