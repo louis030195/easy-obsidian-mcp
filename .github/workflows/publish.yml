@@ -21,12 +21,11 @@ jobs:
       - name: Check if version changed
         id: check
         run: |
-          cd easy-obsidian-mcp
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           
           # Check if this version is already published
-          NPM_VERSION=$(npm view @louis030195/easy-obsidian-mcp version 2>/dev/null || echo "0.0.0")
+          NPM_VERSION=$(npm view @louis030195/mcp-obsidian version 2>/dev/null || echo "0.0.0")
           
           if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
             echo "New version detected: $PACKAGE_VERSION (npm has $NPM_VERSION)"
@@ -54,25 +53,17 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: |
-          cd easy-obsidian-mcp
-          npm ci
+        run: npm ci
 
       - name: Build
-        run: |
-          cd easy-obsidian-mcp
-          npm run build
+        run: npm run build
 
       - name: Run tests (if any)
-        run: |
-          cd easy-obsidian-mcp
-          npm test || echo "No tests configured"
+        run: npm test || echo "No tests configured"
         continue-on-error: true
 
       - name: Publish to npm
-        run: |
-          cd easy-obsidian-mcp
-          npm publish --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -84,11 +75,11 @@ jobs:
           body: |
             ## 🚀 Published to npm
             
-            Package: [easy-obsidian-mcp@${{ needs.check-version.outputs.version }}](https://www.npmjs.com/package/easy-obsidian-mcp/v/${{ needs.check-version.outputs.version }})
+            Package: [@louis030195/mcp-obsidian@${{ needs.check-version.outputs.version }}](https://www.npmjs.com/package/@louis030195/mcp-obsidian/v/${{ needs.check-version.outputs.version }})
             
             ### Installation
             ```bash
-            npx create-easy-obsidian-mcp
+            npx -y @louis030195/mcp-obsidian
             ```
             
             ### Changes
