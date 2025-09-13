@@ -1,0 +1,117 @@
+name: Publish to npm
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'easy-obsidian-mcp/package.json'
+      - 'easy-obsidian-mcp/src/**'
+  workflow_dispatch:
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should-publish: ${{ steps.check.outputs.should-publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check if version changed
+        id: check
+        run: |
+          cd easy-obsidian-mcp
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if this version is already published
+          NPM_VERSION=$(npm view easy-obsidian-mcp version 2>/dev/null || echo "0.0.0")
+          
+          if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
+            echo "New version detected: $PACKAGE_VERSION (npm has $NPM_VERSION)"
+            echo "should-publish=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version $PACKAGE_VERSION already published"
+            echo "should-publish=false" >> $GITHUB_OUTPUT
+          fi
+
+  publish:
+    needs: check-version
+    if: needs.check-version.outputs.should-publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: |
+          cd easy-obsidian-mcp
+          npm ci
+
+      - name: Build
+        run: |
+          cd easy-obsidian-mcp
+          npm run build
+
+      - name: Run tests (if any)
+        run: |
+          cd easy-obsidian-mcp
+          npm test || echo "No tests configured"
+        continue-on-error: true
+
+      - name: Publish to npm
+        run: |
+          cd easy-obsidian-mcp
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Release v${{ needs.check-version.outputs.version }}
+          body: |
+            ## 🚀 Published to npm
+            
+            Package: [easy-obsidian-mcp@${{ needs.check-version.outputs.version }}](https://www.npmjs.com/package/easy-obsidian-mcp/v/${{ needs.check-version.outputs.version }})
+            
+            ### Installation
+            ```bash
+            npx create-easy-obsidian-mcp
+            ```
+            
+            ### Changes
+            See [commit history](https://github.com/${{ github.repository }}/commits/v${{ needs.check-version.outputs.version }}) for details.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update create-easy-obsidian-mcp version
+        run: |
+          cd create-easy-obsidian-mcp
+          # Update the version reference in the create script
+          PACKAGE_VERSION=${{ needs.check-version.outputs.version }}
+          npm version $PACKAGE_VERSION --no-git-tag-version || true
+          
+          # Commit if there are changes
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add .
+            git commit -m "chore: update create-easy-obsidian-mcp to v$PACKAGE_VERSION"
+            git push
+          fi

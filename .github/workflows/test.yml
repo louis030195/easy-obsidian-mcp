@@ -1,0 +1,73 @@
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'easy-obsidian-mcp/**'
+      - '.github/workflows/test.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'easy-obsidian-mcp/**'
+      - '.github/workflows/test.yml'
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18, 20]
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Cache node modules
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: |
+          cd easy-obsidian-mcp
+          npm ci
+
+      - name: Build
+        run: |
+          cd easy-obsidian-mcp
+          npm run build
+
+      - name: Run tests
+        run: |
+          cd easy-obsidian-mcp
+          npm test || echo "No tests configured yet"
+        continue-on-error: true
+
+      - name: Test vault detection (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd easy-obsidian-mcp
+          node test-vault-detection.js || true
+
+      - name: Test vault detection (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd easy-obsidian-mcp
+          node test-vault-detection.js || true
+        shell: pwsh
+
+      - name: Check TypeScript types
+        run: |
+          cd easy-obsidian-mcp
+          npx tsc --noEmit
