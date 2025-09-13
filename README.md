@@ -58,12 +58,72 @@ export OBSIDIAN_VAULT_PATH="/path/to/vault" # Auto-detected if not set
 
 ## 🤖 Using with AI Assistants
 
-### Claude Desktop
+### Claude Desktop App
 
-Add to your Claude Desktop config file:
+[![Install with Claude Desktop](https://img.shields.io/badge/Install%20with-Claude%20Desktop-blue?style=for-the-badge&logo=anthropic)](https://claude.ai/settings/desktop)
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+Add to your Claude Desktop config:
+
+<details>
+<summary><b>macOS</b>: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></summary>
+
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "npx",
+      "args": ["-y", "@louis030195/mcp-obsidian"],
+      "env": {
+        "OBSIDIAN_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Windows</b>: <code>%APPDATA%\Claude\claude_desktop_config.json</code></summary>
+
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "npx",
+      "args": ["-y", "@louis030195/mcp-obsidian"],
+      "env": {
+        "OBSIDIAN_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+</details>
+
+Then restart Claude Desktop.
+
+### Claude.ai (Web) via Claude Code
+
+[![Use with Claude Code](https://img.shields.io/badge/Use%20with-Claude%20Code-green?style=for-the-badge&logo=anthropic)](https://claude.ai/code)
+
+```bash
+# Install globally
+npm install -g @louis030195/mcp-obsidian
+
+# Set API key in your shell config (~/.zshrc or ~/.bashrc)
+export OBSIDIAN_API_KEY="your-api-key-here"
+
+# Run the server
+mcp-obsidian
+```
+
+Then use Claude Code to interact with your vault.
+
+### Cursor IDE
+
+[![Install in Cursor](https://img.shields.io/badge/Install%20in-Cursor-orange?style=for-the-badge&logo=visual-studio-code)](https://cursor.sh)
+
+Add to Cursor settings (Cmd/Ctrl + Shift + P → "Preferences: Open User Settings (JSON)"):
 
 ```json
 {
@@ -79,13 +139,32 @@ Add to your Claude Desktop config file:
 }
 ```
 
-Then restart Claude Desktop.
+Or install globally for better performance:
+
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "mcp-obsidian",
+      "env": {
+        "OBSIDIAN_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
 
 ### Other MCP Clients
 
-Any MCP-compatible client can use this server. Just run:
+Any MCP-compatible client can use this server:
+
 ```bash
+# Via npx (no installation needed)
 npx -y @louis030195/mcp-obsidian
+
+# Or install globally
+npm install -g @louis030195/mcp-obsidian
+mcp-obsidian
 ```
 
 ## 🛠️ Available Tools
