@@ -1,8 +1,11 @@
 {
-    "name": "easy-obsidian-mcp",
-    "version": "0.4.0",
-    "description": "A simple MCP server for Obsidian",
+    "name": "obsidian-mcp",
+    "version": "1.0.0",
+    "description": "MCP server for Obsidian - AI-powered vault search and interaction",
     "main": "dist/index.js",
+    "bin": {
+        "obsidian-mcp": "./dist/cli.js"
+    },
     "scripts": {
         "build": "tsc",
         "start": "node dist/index.js",
@@ -10,9 +13,12 @@
     },
     "keywords": [
         "mcp",
-        "obsidian"
+        "obsidian",
+        "ai",
+        "claude",
+        "search"
     ],
-    "author": "",
+    "author": "louis030195",
     "license": "ISC",
     "dependencies": {
         "@clack/prompts": "^0.7.0",
