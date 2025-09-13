@@ -8,57 +8,41 @@ Connect Claude, ChatGPT, and other AI assistants to your Obsidian vault.
 
 ## Quick Start
 
-1. **Install Obsidian Plugin**
-   - Open Obsidian → Settings → Community plugins
-   - Turn off Restricted mode
-   - Search and install "Local REST API"
-   - Enable it and copy the API key
+### 1. Install in your AI app
 
-2. **Set your API key**
-   ```bash
-   export OBSIDIAN_API_KEY="your-api-key-here"
-   ```
-
-3. **Run the server**
-   ```bash
-   npx -y @louis030195/mcp-obsidian
-   ```
-
-That's it! Your AI can now search and read your Obsidian notes.
-
-## Setup with AI Apps
-
-### Claude Desktop
-
-Add to config file:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
+**Claude Desktop:**
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 ```json
 {
   "mcpServers": {
     "obsidian": {
       "command": "npx",
-      "args": ["-y", "@louis030195/mcp-obsidian"],
-      "env": {
-        "OBSIDIAN_API_KEY": "your-api-key-here"
-      }
+      "args": ["-y", "@louis030195/mcp-obsidian"]
     }
   }
 }
 ```
 
-Restart Claude Desktop.
-
-### Claude Code (Web)
-
+**Claude Code (Web):**
 ```bash
-claude mcp add obsidian "npx -y @louis030195/mcp-obsidian" -s user -e OBSIDIAN_API_KEY="your-api-key-here"
+claude mcp add obsidian "npx -y @louis030195/mcp-obsidian" -s user
 ```
 
-### Cursor
+### 2. Enable Obsidian API (Optional - for full features)
+- Open Obsidian → Settings → Community plugins
+- Turn off Restricted mode → Search "Local REST API" → Install & Enable
+- Copy the API key and add to your config:
+  ```json
+  "env": {
+    "OBSIDIAN_API_KEY": "your-api-key-here"
+  }
+  ```
 
-Add to settings:
+That's it! Your AI can now search and read your Obsidian notes.
+
+## Other AI Apps
+
+**Cursor:** Add to settings (Cmd+Shift+P → "Preferences: Open User Settings (JSON)"):
 ```json
 {
   "mcpServers": {
