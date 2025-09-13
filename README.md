@@ -1,4 +1,4 @@
-# obsidian-mcp
+# mcp-obsidian
 
 https://github.com/user-attachments/assets/99b16c89-24bf-4991-af65-68d21554b438
 
@@ -11,7 +11,7 @@ MCP server for Obsidian - Connect AI assistants to your Obsidian vault. One-line
 ```bash
 # Set your API key and run
 export OBSIDIAN_API_KEY="your-api-key-here"
-npx -y obsidian-mcp
+npx -y @louis030195/mcp-obsidian
 ```
 
 ## Features

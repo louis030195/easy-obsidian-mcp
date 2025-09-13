@@ -1,10 +1,10 @@
 {
-    "name": "obsidian-mcp",
+    "name": "@louis030195/mcp-obsidian",
     "version": "1.0.0",
     "description": "MCP server for Obsidian - AI-powered vault search and interaction",
     "main": "dist/index.js",
     "bin": {
-        "obsidian-mcp": "./dist/cli.js"
+        "mcp-obsidian": "./dist/cli.js"
     },
     "scripts": {
         "build": "tsc",
