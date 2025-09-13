@@ -1,10 +1,8 @@
 # Obsidian MCP Server
 
-https://github.com/user-attachments/assets/99b16c89-24bf-4991-af65-68d21554b438
-
 Connect Claude, ChatGPT, and other AI assistants to your Obsidian vault.
 
-[Support this project 🙏](https://buy.stripe.com/fZu8wP2n7a34fix2LK)
+[Support this project 🙏](https://buy.stripe.com/fZu8wP2n7a34fix2LKgA800)
 
 ## Quick Start
 
@@ -82,7 +80,7 @@ That's it! Your AI can now search and read your Obsidian notes.
 
 **Need help?**
 - [GitHub Issues](https://github.com/louis030195/easy-obsidian-mcp/issues)
-- [Support this project](https://buy.stripe.com/fZu8wP2n7a34fix2LK)
+- [Support this project](https://buy.stripe.com/fZu8wP2n7a34fix2LKgA800)
 
 ---
 
