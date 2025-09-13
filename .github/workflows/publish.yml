@@ -26,7 +26,7 @@ jobs:
           echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           
           # Check if this version is already published
-          NPM_VERSION=$(npm view easy-obsidian-mcp version 2>/dev/null || echo "0.0.0")
+          NPM_VERSION=$(npm view @louis030195/easy-obsidian-mcp version 2>/dev/null || echo "0.0.0")
           
           if [ "$PACKAGE_VERSION" != "$NPM_VERSION" ]; then
             echo "New version detected: $PACKAGE_VERSION (npm has $NPM_VERSION)"

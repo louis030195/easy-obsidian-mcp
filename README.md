@@ -1,11 +1,18 @@
-# easy-obsidian-mcp
+# obsidian-mcp
 
 https://github.com/user-attachments/assets/99b16c89-24bf-4991-af65-68d21554b438
 
-A simple MCP server to interact with Obsidian via its Local REST API plugin.
-and can be installed in one line, even for non technical users.
+MCP server for Obsidian - Connect AI assistants to your Obsidian vault. One-line installation.
 
 [Support the work 🙏](https://store.louis030195.com/l/easy-obsidian-mcp?layout=profile).
+
+## Quick Start
+
+```bash
+# Set your API key and run
+export OBSIDIAN_API_KEY="your-api-key-here"
+npx -y obsidian-mcp
+```
 
 ## Features
 
