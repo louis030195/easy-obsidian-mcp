@@ -1,5 +1,8 @@
 # Obsidian MCP Server
 
+<img width="1495" height="429" alt="image" src="https://github.com/user-attachments/assets/ed3f9f26-ddbd-4baf-8fce-34b44cc3c30f" />
+
+
 Connect Claude, ChatGPT, and other AI assistants to your Obsidian vault.
 
 [Support this project 🙏](https://buy.stripe.com/fZu8wP2n7a34fix2LKgA800)
