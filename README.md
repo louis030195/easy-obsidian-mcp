@@ -15,15 +15,18 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) o
   "mcpServers": {
     "obsidian": {
       "command": "npx",
-      "args": ["-y", "@louis030195/mcp-obsidian"]
+      "args": ["-y", "@louis030195/mcp-obsidian"],
+      "env": {
+        "OBSIDIAN_API_KEY": "your-api-key-here"
+      }
     }
   }
 }
 ```
 
-**Claude Code (Web):**
+**Claude Code:**
 ```bash
-claude mcp add obsidian "npx -y @louis030195/mcp-obsidian" -s user
+claude mcp add obsidian "npx -y @louis030195/mcp-obsidian" -s user -e OBSIDIAN_API_KEY="your-api-key-here"
 ```
 
 ### 2. Enable Obsidian API (Optional - for full features)
