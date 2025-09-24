@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'easy-obsidian-mcp/package.json'
-      - 'easy-obsidian-mcp/src/**'
+      - 'package.json'
+      - 'src/**'
   workflow_dispatch:
 
 jobs:
@@ -78,9 +78,9 @@ jobs:
             Package: [@louis030195/mcp-obsidian@${{ needs.check-version.outputs.version }}](https://www.npmjs.com/package/@louis030195/mcp-obsidian/v/${{ needs.check-version.outputs.version }})
             
             ### Installation
-            ```bash
+            \`\`\`bash
             npx -y @louis030195/mcp-obsidian
-            ```
+            \`\`\`
             
             ### Changes
             See [commit history](https://github.com/${{ github.repository }}/commits/v${{ needs.check-version.outputs.version }}) for details.
@@ -88,21 +88,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update create-easy-obsidian-mcp version
-        run: |
-          cd create-easy-obsidian-mcp
-          # Update the version reference in the create script
-          PACKAGE_VERSION=${{ needs.check-version.outputs.version }}
-          npm version $PACKAGE_VERSION --no-git-tag-version || true
-          
-          # Commit if there are changes
-          if git diff --quiet; then
-            echo "No changes to commit"
-          else
-            git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git config --local user.name "github-actions[bot]"
-            git add .
-            git commit -m "chore: update create-easy-obsidian-mcp to v$PACKAGE_VERSION"
-            git push
-          fi
