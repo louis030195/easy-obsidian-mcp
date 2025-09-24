@@ -10,37 +10,7 @@ const port = process.env.OBSIDIAN_PORT || '27123';
 const host = process.env.OBSIDIAN_HOST || '127.0.0.1';
 const vaultPath = process.env.OBSIDIAN_VAULT_PATH || '';
 
-if (apiKey === 'fallback-no-api') {
-  console.error(`
-╔════════════════════════════════════════════════════════════════╗
-║                    Obsidian MCP Server                        ║
-╚════════════════════════════════════════════════════════════════╝
-
-⚠️  No Obsidian REST API Key provided - running in filesystem-only mode
-
-The server will work with limited functionality:
-✅ Fuzzy search
-✅ Graph analysis  
-✅ Basic file operations
-❌ Dataview queries (requires API)
-❌ Full search capabilities (requires API)
-
-For full functionality, set the OBSIDIAN_API_KEY environment variable:
-
-  export OBSIDIAN_API_KEY="your-api-key-here"
-
-To get your API key:
-1. Open Obsidian
-2. Go to Settings → Community plugins
-3. Install and enable "Local REST API"
-4. Copy the API key from the plugin settings
-
-Optional environment variables:
-  OBSIDIAN_VAULT_PATH  (auto-detected if not set)
-
-For more info: https://github.com/louis030195/obsidian-mcp
-`);
-}
+// MCP servers must not output non-JSON to stderr as it breaks the protocol
 
 // Build arguments
 const args = [
@@ -60,14 +30,6 @@ if (userArgs.length > 0) {
   args.push(...userArgs);
 }
 
-console.error(`Starting Obsidian MCP Server...`);
-console.error(`API endpoint: http://${host}:${port}`);
-if (vaultPath) {
-  console.error(`Vault path: ${vaultPath}`);
-} else {
-  console.error(`Vault path: Auto-detecting...`);
-}
-
 // Spawn the actual server
 const server = spawn('node', args, {
   stdio: 'inherit',
@@ -75,7 +37,11 @@ const server = spawn('node', args, {
 });
 
 server.on('error', (err) => {
-  console.error('Failed to start server:', err);
+  console.error(JSON.stringify({
+    level: "error",
+    message: "Failed to start server",
+    error: err.message
+  }));
   process.exit(1);
 });
 
