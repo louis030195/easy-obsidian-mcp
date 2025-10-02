@@ -112,20 +112,30 @@ const ListFilesInputSchema = z.object({
 });
 
 // Circuit breaker for handling repeated failures
+// Circuit breaker for handling repeated failures with improved recovery
 class CircuitBreaker {
   private failures = 0;
   private lastFailureTime = 0;
   private state: "closed" | "open" | "half-open" = "closed";
+  private consecutiveSuccesses = 0;
+  private cooldownMultiplier = 1;
+  private readonly maxCooldownMultiplier = 8;
+  private readonly halfOpenSuccessThreshold = 2;
 
   constructor(
-    private failureThreshold = 5,
-    private cooldownMs = 30000 // 30 seconds
+    private failureThreshold = 8, // Increased from 5 for better tolerance
+    private baseCooldownMs = 10000 // Reduced from 30s to 10s for faster recovery
   ) {}
 
   isOpen(): boolean {
     if (this.state === "open") {
-      if (Date.now() - this.lastFailureTime > this.cooldownMs) {
+      const currentCooldown = this.baseCooldownMs * this.cooldownMultiplier;
+      if (Date.now() - this.lastFailureTime > currentCooldown) {
         this.state = "half-open";
+        logObsidianEvent("info", "circuit breaker entering half-open state", {
+          cooldownMs: currentCooldown,
+          multiplier: this.cooldownMultiplier,
+        });
         return false;
       }
       return true;
@@ -134,25 +144,86 @@ class CircuitBreaker {
   }
 
   recordSuccess(): void {
-    this.failures = 0;
-    this.state = "closed";
+    if (this.state === "half-open") {
+      this.consecutiveSuccesses++;
+      if (this.consecutiveSuccesses >= this.halfOpenSuccessThreshold) {
+        // Require multiple successes in half-open before fully closing
+        this.state = "closed";
+        this.failures = 0;
+        this.consecutiveSuccesses = 0;
+        this.cooldownMultiplier = Math.max(1, this.cooldownMultiplier / 2); // Gradually reduce multiplier
+        logObsidianEvent("info", "circuit breaker closed after successful recovery", {
+          consecutiveSuccesses: this.consecutiveSuccesses,
+          newMultiplier: this.cooldownMultiplier,
+        });
+      }
+    } else if (this.state === "closed") {
+      // Gradual recovery in closed state
+      if (this.failures > 0) {
+        this.failures = Math.max(0, this.failures - 1);
+      }
+      this.consecutiveSuccesses++;
+    }
   }
 
   recordFailure(): void {
     this.failures++;
     this.lastFailureTime = Date.now();
+    this.consecutiveSuccesses = 0;
 
-    if (this.failures >= this.failureThreshold) {
+    if (this.state === "half-open") {
+      // Immediate open on failure in half-open state
       this.state = "open";
+      this.cooldownMultiplier = Math.min(
+        this.maxCooldownMultiplier,
+        this.cooldownMultiplier * 2
+      );
+      logObsidianEvent("warn", "circuit breaker reopened from half-open state", {
+        failures: this.failures,
+        cooldownMultiplier: this.cooldownMultiplier,
+      });
+    } else if (this.failures >= this.failureThreshold) {
+      this.state = "open";
+      logObsidianEvent("error", "circuit breaker opened after threshold reached", {
+        failures: this.failures,
+        threshold: this.failureThreshold,
+        cooldownMs: this.baseCooldownMs * this.cooldownMultiplier,
+      });
     }
   }
 
-  getStatus(): { state: string; failures: number; lastFailure: number } {
-    return {
+  reset(): void {
+    this.failures = 0;
+    this.state = "closed";
+    this.consecutiveSuccesses = 0;
+    this.cooldownMultiplier = 1;
+    this.lastFailureTime = 0;
+    logObsidianEvent("info", "circuit breaker manually reset");
+  }
+
+  getStatus(): {
+    state: string;
+    failures: number;
+    lastFailure: number;
+    consecutiveSuccesses: number;
+    cooldownMultiplier: number;
+    nextRetryIn?: number;
+  } {
+    const status = {
       state: this.state,
       failures: this.failures,
       lastFailure: this.lastFailureTime,
-    };
+      consecutiveSuccesses: this.consecutiveSuccesses,
+      cooldownMultiplier: this.cooldownMultiplier,
+    } as any;
+
+    if (this.state === "open" && this.lastFailureTime > 0) {
+      const currentCooldown = this.baseCooldownMs * this.cooldownMultiplier;
+      const timeSinceFailure = Date.now() - this.lastFailureTime;
+      status.nextRetryIn = Math.max(0, currentCooldown - timeSinceFailure);
+    }
+
+    return status;
   }
 }
 
