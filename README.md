@@ -5,7 +5,23 @@
 
 Connect Claude, ChatGPT, and other AI assistants to your Obsidian vault.
 
-[Support this project 🙏](https://buy.stripe.com/fZu8wP2n7a34fix2LKgA800)
+---
+
+<div align="center">
+
+### 💖 Support This Project
+
+**If you find this MCP server useful, please consider supporting its development!**
+
+[![Support via Stripe](https://img.shields.io/badge/Support-Stripe-635bff?style=for-the-badge&logo=stripe&logoColor=white)](https://buy.stripe.com/fZu8wP2n7a34fix2LK)
+
+[**👉 Click here to support this project**](https://buy.stripe.com/fZu8wP2n7a34fix2LK)
+
+*Your support helps maintain and improve this tool. Thank you!* 🙏
+
+</div>
+
+---
 
 ## Quick Start
 
